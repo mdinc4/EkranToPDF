@@ -12,7 +12,7 @@ import { Button, Card, TextInput, Switch, ActivityIndicator } from 'react-native
 import { captureScreen } from 'react-native-view-shot';
 import * as ImagePicker from 'expo-image-picker';
 import * as MediaLibrary from 'expo-media-library';
-import { FileSystem } from 'expo-file-system';
+import * as FileSystem from 'expo-file-system'; // ✅ DOĞRU IMPORT
 import * as Sharing from 'expo-sharing';
 
 export default function App() {
@@ -48,7 +48,7 @@ export default function App() {
       
       setScreenshotUri(uri);
       
-      // Dosyayı kaydet (Yeni API)
+      // Dosyayı galeriye kaydet
       const permission = await MediaLibrary.requestPermissionsAsync();
       if (permission.granted) {
         const asset = await MediaLibrary.createAssetAsync(uri);
@@ -73,7 +73,7 @@ export default function App() {
     }
   };
 
-  // 2. GALERİDEN RESİM SEÇ (Yeni FileSystem API)
+  // 2. GALERİDEN RESİM SEÇ
   const pickImageFromGallery = async () => {
     try {
       const hasPermission = await requestPermissions();
@@ -90,12 +90,10 @@ export default function App() {
         const imageUri = result.assets[0].uri;
         setScreenshotUri(imageUri);
         
-        // YENİ FILE SYSTEM API - Basit kayıt
-        const fileName = `selected_${Date.now()}.jpg`;
         const fileInfo = {
           id: Date.now().toString(),
-          name: fileName,
-          uri: imageUri, // Orijinal URI'yi kullan
+          name: `selected_${Date.now()}.jpg`,
+          uri: imageUri,
           type: 'gallery',
           date: new Date().toLocaleString('tr-TR')
         };
@@ -143,7 +141,7 @@ export default function App() {
     }
   };
 
-  // 4. OCR METİN ÇIKARMA
+  // 4. OCR METİN ÇIKARMA (DÜZELTİLMİŞ)
   const extractTextWithOCR = async () => {
     if (!screenshotUri) {
       Alert.alert('Uyarı', 'Önce bir görsel seçin!');
@@ -153,7 +151,7 @@ export default function App() {
     setIsProcessing(true);
 
     try {
-      // Gerçek OCR simülasyonu
+      // OCR simülasyonu - Türkçe metin
       const turkishText = `
 🔍 **OCR İLE ÇIKARILAN METİNLER**
 
@@ -161,34 +159,34 @@ export default function App() {
 ⏰ Saat: ${new Date().toLocaleTimeString('tr-TR')}
 
 📋 **ÖRNEK METİN:**
-Merhaba! Bu bir OCR demo çıktısıdır.
+Bu bir OCR demo çıktısıdır. Gerçek uygulamada
+görseldeki tüm yazılar otomatik olarak çıkarılır.
 
 🛒 **ALIŞVERİŞ LİSTESİ:**
-• Elma - 15 TL/kg
-• Ekmek - 8 TL
-• Süt - 25 TL
-• Peynir - 120 TL
+• Muz - 25 TL/kg
+• Yoğurt - 18 TL
+• Yumurta - 45 TL
+• Zeytin - 85 TL
 
-💰 **TOPLAM: 168 TL**
+💰 **TOPLAM: 173 TL**
 
-📍 **FATURA BİLGİSİ:**
-ABC Market
-Atatürk Cad. No: 123
-İSTANBUL
+📍 **MAĞAZA BİLGİSİ:**
+Marketim Şubesi
+Cumhuriyet Mah. No: 45
+ANKARA
 
-📞 **İLETİŞİM:**
-0555 123 45 67
+📞 **MÜŞTERİ HİZMETLERİ:**
+0850 123 45 67
 
 💡 **OCR AVANTAJLARI:**
 ✓ Faturaları digitalleştirir
 ✓ El yazısını okur
 ✓ Veri girişini hızlandırır
-✓ Dokümanları aranabilir yapar
       `;
       
       setExtractedText(turkishText);
       
-      // Metni dosyaya kaydet (Yeni API)
+      // Metni dosyaya kaydet - HATA DÜZELTİLDİ
       const textFileName = `extracted_text_${Date.now()}.txt`;
       const textFileUri = FileSystem.documentDirectory + textFileName;
       
@@ -212,7 +210,7 @@ Atatürk Cad. No: 123
     }
   };
 
-  // 5. PDF OLUŞTUR ve KAYDET (Yeni API)
+  // 5. PDF OLUŞTUR ve KAYDET (DÜZELTİLMİŞ)
   const createAndSavePDF = async () => {
     if (!screenshotUri && includeImage) {
       Alert.alert('Uyarı', 'PDF oluşturmak için önce bir görsel ekleyin!');
@@ -233,13 +231,12 @@ Oluşturulma: ${new Date().toLocaleString('tr-TR')}
 ${extractedText ? 'ÇIKARILAN METİNLER:\n' + extractedText : 'Metin çıkarılmamış'}
 
 Görsel Durumu: ${screenshotUri ? 'EKLENDİ' : 'EKLENMEDİ'}
-Görsel Yolu: ${screenshotUri || 'Yok'}
 
 --- Uygulama: Ekran Görüntüsü PDF Dönüştürücü ---
       `;
 
-      // PDF dosyasını oluştur (Yeni API)
-      const pdfFileName = `${pdfName}_${Date.now()}.txt`; // .txt olarak kaydedelim
+      // PDF dosyasını oluştur - HATA DÜZELTİLDİ
+      const pdfFileName = `${pdfName}_${Date.now()}.txt`;
       const pdfFileUri = FileSystem.documentDirectory + pdfFileName;
       
       await FileSystem.writeAsStringAsync(pdfFileUri, pdfContent);
@@ -296,26 +293,7 @@ Görsel Yolu: ${screenshotUri || 'Yok'}
     );
   };
 
-  // 7. DOSYA SİL
-  const deleteFile = async (fileId, fileName) => {
-    try {
-      const fileToDelete = savedFiles.find(file => file.id === fileId);
-      if (fileToDelete) {
-        // Dosyayı fiziksel olarak sil
-        await FileSystem.deleteAsync(fileToDelete.uri).catch(() => {
-          console.log('Dosya zaten silinmiş veya silinemiyor');
-        });
-        
-        // Listeden kaldır
-        setSavedFiles(prev => prev.filter(file => file.id !== fileId));
-        Alert.alert('Başarılı', `"${fileName}" silindi.`);
-      }
-    } catch (error) {
-      Alert.alert('Hata', 'Dosya silinemedi: ' + error.message);
-    }
-  };
-
-  // 8. TÜM DOSYALARI SİL
+  // 7. TÜM DOSYALARI SİL
   const clearAllFiles = () => {
     if (savedFiles.length === 0) {
       Alert.alert('Bilgi', 'Silinecek dosya yok.');
@@ -331,9 +309,13 @@ Görsel Yolu: ${screenshotUri || 'Yok'}
           text: 'Evet, Sil', 
           style: 'destructive',
           onPress: () => {
-            // Tüm dosyaları fiziksel olarak sil
+            // Tüm dosyaları sil
             savedFiles.forEach(async (file) => {
-              await FileSystem.deleteAsync(file.uri).catch(() => {});
+              try {
+                await FileSystem.deleteAsync(file.uri);
+              } catch (error) {
+                console.log('Dosya zaten silinmiş:', file.name);
+              }
             });
             setSavedFiles([]);
             Alert.alert('Başarılı', 'Tüm dosyalar silindi.');
@@ -343,7 +325,7 @@ Görsel Yolu: ${screenshotUri || 'Yok'}
     );
   };
 
-  // 9. RESMİ SİL
+  // 8. RESMİ SİL
   const clearImage = () => {
     setScreenshotUri(null);
     setExtractedText('');
@@ -357,14 +339,14 @@ Görsel Yolu: ${screenshotUri || 'Yok'}
         <Card style={styles.card}>
           <Card.Content>
             <Text style={styles.title}>📱 EKRAN GÖRÜNTÜSÜ → PDF</Text>
-            <Text style={styles.subtitle}>Yeni FileSystem API + OCR + Kayıt</Text>
+            <Text style={styles.subtitle}>OCR + Dosya Kaydetme</Text>
           </Card.Content>
         </Card>
 
         {/* DOSYA YÖNETİMİ */}
         <Card style={styles.card}>
           <Card.Content>
-            <Text style={styles.cardTitle}>📁 Dosya Yönetimi ({savedFiles.length})</Text>
+            <Text style={styles.cardTitle}>📁 Kayıtlı Dosyalar ({savedFiles.length})</Text>
             <View style={styles.fileButtonsRow}>
               <Button 
                 mode="outlined" 
@@ -407,9 +389,6 @@ Görsel Yolu: ${screenshotUri || 'Yok'}
             ) : (
               <View style={styles.placeholder}>
                 <Text style={styles.placeholderText}>Görsel seçilmedi</Text>
-                <Text style={styles.placeholderSubtext}>
-                  Aşağıdaki seçeneklerden birini kullanın
-                </Text>
               </View>
             )}
             
@@ -449,9 +428,6 @@ Görsel Yolu: ${screenshotUri || 'Yok'}
         <Card style={styles.card}>
           <Card.Content>
             <Text style={styles.cardTitle}>🔍 OCR - Metin Çıkarma</Text>
-            <Text style={styles.ocrDescription}>
-              Görseldeki yazıları digital metne dönüştürür
-            </Text>
             
             {extractedText ? (
               <ScrollView style={styles.textContainer}>
@@ -502,7 +478,7 @@ Görsel Yolu: ${screenshotUri || 'Yok'}
               style={[styles.button, styles.pdfButton]}
               icon="file-pdf-box"
             >
-              📄 PDF Oluştur ve Kaydet
+              📄 PDF Oluştur
             </Button>
           </Card.Content>
         </Card>
@@ -554,12 +530,6 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     color: '#333',
   },
-  ocrDescription: {
-    fontSize: 12,
-    color: '#666',
-    marginBottom: 12,
-    fontStyle: 'italic',
-  },
   imageContainer: {
     alignItems: 'center',
     marginBottom: 12,
@@ -583,18 +553,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 12,
-    padding: 16,
   },
   placeholderText: {
     color: '#666',
     fontSize: 16,
-    fontWeight: '500',
-  },
-  placeholderSubtext: {
-    color: '#999',
-    fontSize: 12,
-    textAlign: 'center',
-    marginTop: 4,
   },
   buttonRow: {
     flexDirection: 'row',
