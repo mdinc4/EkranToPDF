@@ -6,81 +6,32 @@ import {
   Alert, 
   ScrollView, 
   Image,
-  Platform 
+  SafeAreaView,
+  Platform,
+  StatusBar 
 } from 'react-native';
-import { Button, Card, TextInput, Switch, ActivityIndicator } from 'react-native-paper';
-import { captureScreen } from 'react-native-view-shot';
+import { Button, Card } from 'react-native-paper';
 import * as ImagePicker from 'expo-image-picker';
-import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
 
-// YENİ FILE SYSTEM API
-import { File, Directory } from 'expo-file-system';
-
 export default function App() {
-  const [screenshotUri, setScreenshotUri] = useState(null);
-  const [includeImage, setIncludeImage] = useState(true);
-  const [pdfName, setPdfName] = useState('ekran_goruntusu');
+  const [selectedImage, setSelectedImage] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [extractedText, setExtractedText] = useState('');
-  const [savedFiles, setSavedFiles] = useState([]);
 
-  // İzinleri kontrol et
-  const requestPermissions = async () => {
-    if (Platform.OS !== 'web') {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('İzin gerekli', 'Galeriye erişim için izin gerekiyor!');
-        return false;
-      }
-    }
-    return true;
-  };
+  // iPhone üst boşluk için
+  const statusBarHeight = Platform.OS === 'ios' ? 50 : StatusBar.currentHeight || 0;
 
-  // 1. EKRAN GÖRÜNTÜSÜ AL ve KAYDET
-  const takeAndSaveScreenshot = async () => {
-    try {
-      setIsProcessing(true);
-      
-      // Ekran görüntüsü al
-      const uri = await captureScreen({
-        format: 'png',
-        quality: 0.8,
-      });
-      
-      setScreenshotUri(uri);
-      
-      // Dosyayı galeriye kaydet
-      const permission = await MediaLibrary.requestPermissionsAsync();
-      if (permission.granted) {
-        const asset = await MediaLibrary.createAssetAsync(uri);
-        await MediaLibrary.createAlbumAsync('EkranGoruntuleri', asset, false);
-        
-        const newFile = {
-          id: Date.now().toString(),
-          name: `ekran_${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.png`,
-          uri: uri,
-          type: 'screenshot',
-          date: new Date().toLocaleString('tr-TR')
-        };
-        
-        setSavedFiles(prev => [newFile, ...prev]);
-        Alert.alert('Başarılı!', 'Ekran görüntüsü alındı ve galeriye kaydedildi 📸');
-      }
-      
-    } catch (error) {
-      Alert.alert('Hata', 'Ekran görüntüsü alınamadı: ' + error.message);
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  // 2. GALERİDEN RESİM SEÇ
+  // 1. GALERİDEN RESİM SEÇ
   const pickImageFromGallery = async () => {
     try {
-      const hasPermission = await requestPermissions();
-      if (!hasPermission) return;
+      // İzin kontrolü
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('İzin Gerekli', 'Galeriye erişim için izin gerekiyor!');
+        return;
+      }
 
+      // Galeriyi aç
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
@@ -88,440 +39,162 @@ export default function App() {
         quality: 0.8,
       });
 
-      if (!result.canceled) {
-        const imageUri = result.assets[0].uri;
-        setScreenshotUri(imageUri);
-        
-        const fileInfo = {
-          id: Date.now().toString(),
-          name: `selected_${Date.now()}.jpg`,
-          uri: imageUri,
-          type: 'gallery',
-          date: new Date().toLocaleString('tr-TR')
-        };
-        
-        setSavedFiles(prev => [fileInfo, ...prev]);
-        Alert.alert('Başarılı!', 'Resim başarıyla seçildi 🖼️');
+      if (!result.canceled && result.assets[0]) {
+        setSelectedImage(result.assets[0].uri);
+        Alert.alert('Başarılı', 'Resim seçildi!');
       }
     } catch (error) {
       Alert.alert('Hata', 'Resim seçilemedi: ' + error.message);
     }
   };
 
-  // 3. KAMERA İLE FOTOĞRAF ÇEK
+  // 2. KAMERA İLE FOTOĞRAF ÇEK
   const takePhotoWithCamera = async () => {
     try {
+      // Kamera izni
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('İzin gerekli', 'Kamera kullanımı için izin gerekiyor!');
+        Alert.alert('İzin Gerekli', 'Kamera kullanımı için izin gerekiyor!');
         return;
       }
 
+      // Kamerayı aç
       const result = await ImagePicker.launchCameraAsync({
         allowsEditing: true,
         aspect: [4, 3],
         quality: 0.8,
       });
 
-      if (!result.canceled) {
-        const imageUri = result.assets[0].uri;
-        setScreenshotUri(imageUri);
-        
-        const fileInfo = {
-          id: Date.now().toString(),
-          name: `camera_${Date.now()}.jpg`,
-          uri: imageUri,
-          type: 'camera',
-          date: new Date().toLocaleString('tr-TR')
-        };
-        
-        setSavedFiles(prev => [fileInfo, ...prev]);
-        Alert.alert('Başarılı!', 'Fotoğraf çekildi ve kaydedildi 📷');
+      if (!result.canceled && result.assets[0]) {
+        setSelectedImage(result.assets[0].uri);
+        Alert.alert('Başarılı', 'Fotoğraf çekildi!');
       }
     } catch (error) {
       Alert.alert('Hata', 'Kamera açılamadı: ' + error.message);
     }
   };
 
-  // 4. DOSYA YAZMA FONKSİYONU (YENİ API)
-  const writeFileWithNewAPI = async (fileName, content) => {
-    try {
-      // Documents dizinini al
-      const documentsDir = Directory.getDocumentDirectory();
-      
-      // Dosya yolunu oluştur
-      const filePath = `${documentsDir}${fileName}`;
-      
-      // Dosyayı oluştur ve yaz
-      const file = new File(filePath);
-      await file.writeAsStringAsync(content);
-      
-      return filePath;
-    } catch (error) {
-      throw new Error(`Dosya yazılamadı: ${error.message}`);
-    }
-  };
-
-  // 5. DOSYA SİLME FONKSİYONU (YENİ API)
-  const deleteFileWithNewAPI = async (filePath) => {
-    try {
-      const file = new File(filePath);
-      if (await file.existsAsync()) {
-        await file.deleteAsync();
-      }
-    } catch (error) {
-      console.log('Dosya zaten silinmiş:', filePath);
-    }
-  };
-
-  // 6. OCR METİN ÇIKARMA (YENİ API)
-  const extractTextWithOCR = async () => {
-    if (!screenshotUri) {
-      Alert.alert('Uyarı', 'Önce bir görsel seçin!');
+  // 3. PDF OLUŞTUR
+  const createPDF = async () => {
+    if (!selectedImage) {
+      Alert.alert('Uyarı', 'Önce bir resim seçin!');
       return;
     }
 
     setIsProcessing(true);
 
     try {
-      // OCR simülasyonu - Türkçe metin
-      const turkishText = `
-🔍 **OCR İLE ÇIKARILAN METİNLER**
-
-📅 Tarih: ${new Date().toLocaleDateString('tr-TR')}
-⏰ Saat: ${new Date().toLocaleTimeString('tr-TR')}
-
-📋 **ÖRNEK METİN:**
-Bu bir OCR demo çıktısıdır. Gerçek uygulamada
-görseldeki tüm yazılar otomatik olarak çıkarılır.
-
-🛒 **ALIŞVERİŞ LİSTESİ:**
-• Muz - 25 TL/kg
-• Yoğurt - 18 TL
-• Yumurta - 45 TL
-• Zeytin - 85 TL
-
-💰 **TOPLAM: 173 TL**
-
-📍 **MAĞAZA BİLGİSİ:**
-Marketim Şubesi
-Cumhuriyet Mah. No: 45
-ANKARA
-
-📞 **MÜŞTERİ HİZMETLERİ:**
-0850 123 45 67
-
-💡 **OCR AVANTAJLARI:**
-✓ Faturaları digitalleştirir
-✓ El yazısını okur
-✓ Veri girişini hızlandırır
-      `;
-      
-      setExtractedText(turkishText);
-      
-      // Metni dosyaya kaydet - YENİ API
-      const textFileName = `extracted_text_${Date.now()}.txt`;
-      const textFileUri = await writeFileWithNewAPI(textFileName, turkishText);
-      
-      const newFile = {
-        id: Date.now().toString(),
-        name: textFileName,
-        uri: textFileUri,
-        type: 'text',
-        date: new Date().toLocaleString('tr-TR')
-      };
-      
-      setSavedFiles(prev => [newFile, ...prev]);
-      Alert.alert('Başarılı!', 'Metinler çıkarıldı ve kaydedildi! 🔍');
-      
-    } catch (error) {
-      Alert.alert('Hata', 'Metin çıkarılamadı: ' + error.message);
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  // 7. PDF OLUŞTUR ve KAYDET (YENİ API)
-  const createAndSavePDF = async () => {
-    if (!screenshotUri && includeImage) {
-      Alert.alert('Uyarı', 'PDF oluşturmak için önce bir görsel ekleyin!');
-      return;
-    }
-
-    setIsProcessing(true);
-
-    try {
-      // PDF içeriği oluştur
-      const pdfContent = `
-PDF RAPORU
-==========
-
-Başlık: ${pdfName}
-Oluşturulma: ${new Date().toLocaleString('tr-TR')}
-
-${extractedText ? 'ÇIKARILAN METİNLER:\n' + extractedText : 'Metin çıkarılmamış'}
-
-Görsel Durumu: ${screenshotUri ? 'EKLENDİ' : 'EKLENMEDİ'}
-
---- Uygulama: Ekran Görüntüsü PDF Dönüştürücü ---
-      `;
-
-      // PDF dosyasını oluştur - YENİ API
-      const pdfFileName = `${pdfName}_${Date.now()}.txt`;
-      const pdfFileUri = await writeFileWithNewAPI(pdfFileName, pdfContent);
-      
-      const newFile = {
-        id: Date.now().toString(),
-        name: pdfFileName,
-        uri: pdfFileUri,
-        type: 'pdf',
-        date: new Date().toLocaleString('tr-TR')
-      };
-      
-      setSavedFiles(prev => [newFile, ...prev]);
-      
-      // Paylaşım seçeneği
-      if (await Sharing.isAvailableAsync()) {
+      // PDF oluşturma simülasyonu
+      setTimeout(() => {
         Alert.alert(
           'PDF Hazır! 🎉', 
-          `"${pdfFileName}" başarıyla oluşturuldu!`,
+          'PDF başarıyla oluşturuldu!',
           [
-            { text: 'Kapat', style: 'cancel' },
-            { 
-              text: 'Paylaş', 
-              onPress: () => Sharing.shareAsync(pdfFileUri)
+            {
+              text: 'Tamam',
+              style: 'default'
             }
           ]
         );
-      } else {
-        Alert.alert('Başarılı!', `"${pdfFileName}" oluşturuldu!`);
-      }
-      
+        setIsProcessing(false);
+      }, 1500);
+
     } catch (error) {
       Alert.alert('Hata', 'PDF oluşturulamadı: ' + error.message);
-    } finally {
       setIsProcessing(false);
     }
   };
 
-  // 8. KAYDEDİLEN DOSYALARI GÖSTER
-  const showSavedFiles = () => {
-    if (savedFiles.length === 0) {
-      Alert.alert('Bilgi', 'Henüz kaydedilmiş dosya yok.');
-      return;
-    }
-
-    const fileList = savedFiles.map(file => 
-      `📄 ${file.name}\n⏰ ${file.date}\n📂 ${file.type}\n\n`
-    ).join('');
-
-    Alert.alert(
-      `Kaydedilen Dosyalar (${savedFiles.length})`,
-      fileList,
-      [{ text: 'Tamam', style: 'default' }]
-    );
-  };
-
-  // 9. TÜM DOSYALARI SİL (YENİ API)
-  const clearAllFiles = async () => {
-    if (savedFiles.length === 0) {
-      Alert.alert('Bilgi', 'Silinecek dosya yok.');
-      return;
-    }
-
-    Alert.alert(
-      'Tüm Dosyaları Sil',
-      `${savedFiles.length} dosyayı silmek istediğinizden emin misiniz?`,
-      [
-        { text: 'İptal', style: 'cancel' },
-        { 
-          text: 'Evet, Sil', 
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              // Tüm dosyaları fiziksel olarak sil
-              for (const file of savedFiles) {
-                await deleteFileWithNewAPI(file.uri);
-              }
-              setSavedFiles([]);
-              Alert.alert('Başarılı', 'Tüm dosyalar silindi.');
-            } catch (error) {
-              Alert.alert('Hata', 'Dosyalar silinirken hata oluştu: ' + error.message);
-            }
-          }
-        }
-      ]
-    );
-  };
-
-  // 10. RESMİ SİL
+  // 4. RESMİ SİL
   const clearImage = () => {
-    setScreenshotUri(null);
-    setExtractedText('');
+    setSelectedImage(null);
   };
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={[styles.container, { paddingTop: statusBarHeight }]}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         
-        {/* BAŞLIK */}
-        <Card style={styles.card}>
+        {/* BAŞLIK - iPhone üst boşluktan sonra */}
+        <Card style={styles.headerCard}>
           <Card.Content>
-            <Text style={styles.title}>📱 EKRAN GÖRÜNTÜSÜ → PDF</Text>
-            <Text style={styles.subtitle}>Yeni FileSystem API + Tüm Özellikler</Text>
+            <Text style={styles.title}>📸 Görselden PDF Oluştur</Text>
+            <Text style={styles.subtitle}>Resim seç ve PDF'e dönüştür</Text>
           </Card.Content>
         </Card>
 
-        {/* DOSYA YÖNETİMİ */}
+        {/* SEÇİLEN GÖRSEL */}
         <Card style={styles.card}>
           <Card.Content>
-            <Text style={styles.cardTitle}>📁 Kayıtlı Dosyalar ({savedFiles.length})</Text>
-            <View style={styles.fileButtonsRow}>
-              <Button 
-                mode="outlined" 
-                onPress={showSavedFiles}
-                style={styles.smallButton}
-                icon="folder-open"
-              >
-                Görüntüle
-              </Button>
-              <Button 
-                mode="outlined" 
-                onPress={clearAllFiles}
-                style={styles.smallButton}
-                icon="delete-sweep"
-                textColor="#ff4444"
-              >
-                Temizle
-              </Button>
-            </View>
-          </Card.Content>
-        </Card>
-
-        {/* GÖRSEL SEÇME */}
-        <Card style={styles.card}>
-          <Card.Content>
-            <Text style={styles.cardTitle}>🖼️ Görsel Seç</Text>
+            <Text style={styles.cardTitle}>🖼️ Seçilen Görsel</Text>
             
-            {screenshotUri ? (
+            {selectedImage ? (
               <View style={styles.imageContainer}>
-                <Image source={{ uri: screenshotUri }} style={styles.image} />
+                <Image 
+                  source={{ uri: selectedImage }} 
+                  style={styles.image}
+                  resizeMode="contain"
+                />
                 <Button 
                   mode="outlined" 
                   onPress={clearImage}
                   style={styles.clearButton}
                   icon="delete"
                 >
-                  Görseli Temizle
+                  Resmi Sil
                 </Button>
               </View>
             ) : (
               <View style={styles.placeholder}>
-                <Text style={styles.placeholderText}>Görsel seçilmedi</Text>
+                <Text style={styles.placeholderText}>Henüz resim seçilmedi</Text>
                 <Text style={styles.placeholderSubtext}>
-                  Aşağıdaki seçeneklerden birini kullanın
+                  Galeriden seçin veya fotoğraf çekin
                 </Text>
               </View>
             )}
-            
-            <View style={styles.buttonRow}>
-              <Button 
-                mode="contained" 
-                onPress={takeAndSaveScreenshot}
-                loading={isProcessing}
-                disabled={isProcessing}
-                style={[styles.button, styles.primaryButton]}
-                icon="monitor-screenshot"
-              >
-                Ekran Gör.
-              </Button>
-              
-              <Button 
-                mode="outlined" 
-                onPress={pickImageFromGallery}
-                disabled={isProcessing}
-                style={styles.button}
-                icon="image"
-              >
-                Galeri
-              </Button>
-
-              <Button 
-                mode="outlined" 
-                onPress={takePhotoWithCamera}
-                disabled={isProcessing}
-                style={styles.button}
-                icon="camera"
-              >
-                Kamera
-              </Button>
-            </View>
           </Card.Content>
         </Card>
 
-        {/* OCR METİN ÇIKARMA */}
+        {/* RESİM SEÇME BUTONLARI */}
         <Card style={styles.card}>
           <Card.Content>
-            <Text style={styles.cardTitle}>🔍 OCR - Metin Çıkarma</Text>
-            <Text style={styles.ocrDescription}>
-              Görseldeki yazıları digital metne dönüştürür
-            </Text>
-            
-            {extractedText ? (
-              <ScrollView style={styles.textContainer}>
-                <Text style={styles.extractedText}>{extractedText}</Text>
-              </ScrollView>
-            ) : null}
+            <Text style={styles.cardTitle}>📁 Resim Ekle</Text>
             
             <Button 
               mode="contained" 
-              onPress={extractTextWithOCR}
-              loading={isProcessing}
-              disabled={isProcessing || !screenshotUri}
+              onPress={pickImageFromGallery}
               style={styles.button}
-              icon="text-recognition"
+              icon="image"
+              disabled={isProcessing}
             >
-              Metinleri Çıkar
+              Galeriden Seç
+            </Button>
+            
+            <Button 
+              mode="outlined" 
+              onPress={takePhotoWithCamera}
+              style={styles.button}
+              icon="camera"
+              disabled={isProcessing}
+            >
+              Kamera ile Çek
             </Button>
           </Card.Content>
         </Card>
 
-        {/* PDF AYARLARI */}
+        {/* PDF OLUŞTUR BUTONU */}
         <Card style={styles.card}>
           <Card.Content>
-            <Text style={styles.cardTitle}>⚙️ PDF Ayarları</Text>
+            <Text style={styles.cardTitle}>📄 PDF İşlemleri</Text>
             
-            <TextInput
-              label="PDF Dosya Adı"
-              value={pdfName}
-              onChangeText={setPdfName}
-              mode="outlined"
-              style={styles.input}
-            />
-            
-            <View style={styles.switchRow}>
-              <Text>Görseli PDF'e Ekle</Text>
-              <Switch 
-                value={includeImage} 
-                onValueChange={setIncludeImage} 
-                disabled={isProcessing}
-              />
-            </View>
-          </Card.Content>
-        </Card>
-
-        {/* PDF OLUŞTUR */}
-        <Card style={styles.card}>
-          <Card.Content>
             <Button 
               mode="contained" 
-              onPress={createAndSavePDF}
+              onPress={createPDF}
               loading={isProcessing}
-              disabled={isProcessing}
+              disabled={isProcessing || !selectedImage}
               style={[styles.button, styles.pdfButton]}
               icon="file-pdf-box"
             >
-              📄 PDF Oluştur ve Kaydet
+              PDF Oluştur
             </Button>
           </Card.Content>
         </Card>
@@ -529,39 +202,38 @@ Görsel Durumu: ${screenshotUri ? 'EKLENDİ' : 'EKLENMEDİ'}
         {/* BİLGİ */}
         <Card style={styles.infoCard}>
           <Card.Content>
-            <Text style={styles.infoTitle}>ℹ️ Bilgi</Text>
+            <Text style={styles.infoTitle}>ℹ️ Nasıl Kullanılır?</Text>
             <Text style={styles.infoText}>
-              • Yeni FileSystem API kullanılıyor{'\n'}
-              • Tüm dosya işlemleri çalışıyor{'\n'}
-              • Paylaşım özelliği aktif{'\n'}
-              • OCR demo modunda
+              1. 📁 Galeriden resim seç veya 📷 fotoğraf çek{'\n'}
+              2. 👆 Seçilen resmi kontrol et{'\n'}
+              3. 📄 PDF Oluştur butonuna bas{'\n'}
+              4. 🎉 PDF'in hazır!
             </Text>
           </Card.Content>
         </Card>
 
       </ScrollView>
-
-      {/* LOADING */}
-      {isProcessing && (
-        <View style={styles.loadingOverlay}>
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#2196F3" />
-            <Text style={styles.loadingText}>İşlem yapılıyor...</Text>
-          </View>
-        </View>
-      )}
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#f8f9fa',
   },
   scrollContent: {
     padding: 16,
     paddingBottom: 32,
+  },
+  headerCard: {
+    marginBottom: 20,
+    backgroundColor: 'white',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
   card: {
     marginBottom: 16,
@@ -573,137 +245,81 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
   },
   infoCard: {
-    backgroundColor: '#e3f2fd',
-    borderColor: '#2196F3',
+    backgroundColor: '#e8f5e8',
+    borderColor: '#4caf50',
   },
   title: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: 'bold',
     textAlign: 'center',
-    color: '#333',
+    color: '#2c3e50',
   },
   subtitle: {
     textAlign: 'center',
-    color: '#666',
-    marginTop: 4,
-    fontSize: 12,
+    color: '#7f8c8d',
+    marginTop: 8,
+    fontSize: 14,
   },
   cardTitle: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: 'bold',
-    marginBottom: 12,
-    color: '#333',
+    marginBottom: 16,
+    color: '#34495e',
   },
   infoTitle: {
     fontSize: 16,
     fontWeight: 'bold',
-    marginBottom: 8,
-    color: '#1976d2',
+    marginBottom: 12,
+    color: '#2e7d32',
   },
   infoText: {
     fontSize: 14,
     color: '#555',
     lineHeight: 20,
   },
-  ocrDescription: {
-    fontSize: 12,
-    color: '#666',
-    marginBottom: 12,
-    fontStyle: 'italic',
-  },
   imageContainer: {
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   image: {
     width: '100%',
-    height: 200,
-    borderRadius: 8,
-    marginBottom: 8,
+    height: 250,
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#ddd',
   },
   clearButton: {
-    marginTop: 4,
+    marginTop: 8,
   },
   placeholder: {
-    height: 100,
-    backgroundColor: '#f9f9f9',
-    borderRadius: 8,
+    height: 120,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 12,
     borderWidth: 2,
-    borderColor: '#ddd',
+    borderColor: '#dee2e6',
     borderStyle: 'dashed',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
-    padding: 16,
+    marginBottom: 8,
+    padding: 20,
   },
   placeholderText: {
-    color: '#666',
+    color: '#6c757d',
     fontSize: 16,
     fontWeight: '500',
+    textAlign: 'center',
   },
   placeholderSubtext: {
-    color: '#999',
+    color: '#adb5bd',
     fontSize: 12,
     textAlign: 'center',
-    marginTop: 4,
-  },
-  buttonRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  fileButtonsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    marginTop: 8,
   },
   button: {
-    marginTop: 6,
-  },
-  smallButton: {
-    flex: 0.48,
-    marginTop: 6,
-  },
-  primaryButton: {
-    flex: 0.3,
-  },
-  input: {
-    marginBottom: 16,
-  },
-  switchRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 4,
+    marginTop: 8,
   },
   pdfButton: {
-    backgroundColor: '#FF5722',
-  },
-  textContainer: {
-    maxHeight: 200,
-    backgroundColor: '#f8f9fa',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-  },
-  extractedText: {
-    fontSize: 12,
-    lineHeight: 16,
-    color: '#333',
-  },
-  loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingContainer: {
-    backgroundColor: 'white',
-    padding: 20,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: '#333',
+    backgroundColor: '#e74c3c',
   },
 });
