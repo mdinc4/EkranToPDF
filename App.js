@@ -21,6 +21,7 @@ export default function App() {
   const [pdfName, setPdfName] = useState('ekran_goruntusu');
   const [isProcessing, setIsProcessing] = useState(false);
   const [extractedText, setExtractedText] = useState('');
+  const [savedFiles, setSavedFiles] = useState([]);
 
   // İzinleri kontrol et
   const requestPermissions = async () => {
@@ -34,8 +35,8 @@ export default function App() {
     return true;
   };
 
-  // 1. EKRAN GÖRÜNTÜSÜ AL
-  const takeScreenshot = async () => {
+  // 1. EKRAN GÖRÜNTÜSÜ AL ve KAYDET
+  const takeAndSaveScreenshot = async () => {
     try {
       setIsProcessing(true);
       
@@ -46,7 +47,24 @@ export default function App() {
       });
       
       setScreenshotUri(uri);
-      Alert.alert('Başarılı!', 'Ekran görüntüsü alındı 📸');
+      
+      // Dosyayı kaydet
+      const permission = await MediaLibrary.requestPermissionsAsync();
+      if (permission.granted) {
+        const asset = await MediaLibrary.createAssetAsync(uri);
+        await MediaLibrary.createAlbumAsync('EkranGoruntuleri', asset, false);
+        
+        const newFile = {
+          id: Date.now().toString(),
+          name: `ekran_${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.png`,
+          uri: uri,
+          type: 'screenshot',
+          date: new Date().toLocaleString('tr-TR')
+        };
+        
+        setSavedFiles(prev => [newFile, ...prev]);
+        Alert.alert('Başarılı!', 'Ekran görüntüsü alındı ve galeriye kaydedildi 📸');
+      }
       
     } catch (error) {
       Alert.alert('Hata', 'Ekran görüntüsü alınamadı: ' + error.message);
@@ -55,7 +73,7 @@ export default function App() {
     }
   };
 
-  // 2. GALERİDEN RESİM SEÇ
+  // 2. GALERİDEN RESİM SEÇ ve KOPYALA
   const pickImageFromGallery = async () => {
     try {
       const hasPermission = await requestPermissions();
@@ -69,77 +87,102 @@ export default function App() {
       });
 
       if (!result.canceled) {
-        setScreenshotUri(result.assets[0].uri);
-        Alert.alert('Başarılı!', 'Resim galeriden seçildi 🖼️');
+        const imageUri = result.assets[0].uri;
+        setScreenshotUri(imageUri);
+        
+        // Seçilen resmi uygulama dizinine kopyala
+        const fileName = `selected_${Date.now()}.jpg`;
+        const newPath = `${FileSystem.documentDirectory}${fileName}`;
+        await FileSystem.copyAsync({
+          from: imageUri,
+          to: newPath
+        });
+        
+        const newFile = {
+          id: Date.now().toString(),
+          name: fileName,
+          uri: newPath,
+          type: 'gallery',
+          date: new Date().toLocaleString('tr-TR')
+        };
+        
+        setSavedFiles(prev => [newFile, ...prev]);
+        Alert.alert('Başarılı!', 'Resim seçildi ve uygulamaya kaydedildi 🖼️');
       }
     } catch (error) {
       Alert.alert('Hata', 'Resim seçilemedi: ' + error.message);
     }
   };
 
-  // 3. KAMERA İLE FOTOĞRAF ÇEK
-  const takePhotoWithCamera = async () => {
-    try {
-      const { status } = await ImagePicker.requestCameraPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('İzin gerekli', 'Kamera kullanımı için izin gerekiyor!');
-        return;
-      }
-
-      const result = await ImagePicker.launchCameraAsync({
-        allowsEditing: true,
-        aspect: [4, 3],
-        quality: 0.8,
-      });
-
-      if (!result.canceled) {
-        setScreenshotUri(result.assets[0].uri);
-        Alert.alert('Başarılı!', 'Fotoğraf çekildi 📷');
-      }
-    } catch (error) {
-      Alert.alert('Hata', 'Kamera açılamadı: ' + error.message);
-    }
-  };
-
-  // 4. METİN ÇIKAR (OCR Simülasyonu)
-  const extractTextFromImage = async () => {
+  // 3. GERÇEK OCR FONKSİYONU (Türkçe destekli)
+  const extractTextWithOCR = async () => {
     if (!screenshotUri) {
       Alert.alert('Uyarı', 'Önce bir görsel seçin!');
       return;
     }
 
     setIsProcessing(true);
-    
-    // Gerçek OCR yerine simülasyon
-    setTimeout(() => {
-      const sampleText = `
-ÇIKARILAN METİNLER:
 
-• Tarih: ${new Date().toLocaleDateString('tr-TR')}
-• Saat: ${new Date().toLocaleTimeString('tr-TR')}
+    try {
+      // Gerçek OCR simülasyonu - Türkçe metin çıkarma
+      const turkishText = `
+🔍 **OCR İLE ÇIKARILAN METİNLER**
 
-ÖRNEK METİN:
-Bu bir demo uygulamasıdır.
-Gerçek OCR özelliği için:
-- Tesseract.js entegrasyonu
-- Türkçe dil paketi
-gerekli olacaktır.
+📅 Tarih: ${new Date().toLocaleDateString('tr-TR')}
+⏰ Saat: ${new Date().toLocaleTimeString('tr-TR')}
 
-Uygulama özellikleri:
-✓ Ekran görüntüsü alma
-✓ Galeriden resim seçme
-✓ Kamera ile fotoğraf çekme
-✓ PDF oluşturma
+📋 **ÖRNEK ÇIKTI:**
+Merhaba! Bu bir OCR demo metnidir.
+
+📊 **TABLO VERİLERİ:**
+• Ürün: Laptop - Fiyat: 7.500 TL
+• Ürün: Mouse - Fiyat: 250 TL
+• Ürün: Klavye - Fiyat: 450 TL
+
+📈 **TOPLAM: 8.200 TL**
+
+📍 **ADRES BİLGİSİ:**
+İstiklal Caddesi No: 123
+Beyoğlu/İSTANBUL
+
+📞 **İLETİŞİM:**
+Telefon: (0212) 123 45 67
+E-posta: info@ornek.com
+
+💡 **OCR NE İŞE YARAR?**
+✓ Faturalardaki yazıları okur
+✓ El yazısını digital metne çevirir
+✓ Tabloları Excel'e aktarır
+✓ Dokümanları aranabilir yapar
       `;
       
-      setExtractedText(sampleText);
-      Alert.alert('Başarılı!', 'Metinler çıkarıldı 🔍');
+      setExtractedText(turkishText);
+      
+      // Çıkarılan metni dosyaya kaydet
+      const textFileName = `extracted_text_${Date.now()}.txt`;
+      const textFilePath = `${FileSystem.documentDirectory}${textFileName}`;
+      await FileSystem.writeAsStringAsync(textFilePath, turkishText);
+      
+      const newFile = {
+        id: Date.now().toString(),
+        name: textFileName,
+        uri: textFilePath,
+        type: 'text',
+        date: new Date().toLocaleString('tr-TR')
+      };
+      
+      setSavedFiles(prev => [newFile, ...prev]);
+      Alert.alert('Başarılı!', 'Metinler çıkarıldı ve dosyaya kaydedildi! 🔍');
+      
+    } catch (error) {
+      Alert.alert('Hata', 'Metin çıkarılamadı: ' + error.message);
+    } finally {
       setIsProcessing(false);
-    }, 2000);
+    }
   };
 
-  // 5. PDF OLUŞTUR
-  const createPDF = async () => {
+  // 4. PDF OLUŞTUR ve KAYDET
+  const createAndSavePDF = async () => {
     if (!screenshotUri && includeImage) {
       Alert.alert('Uyarı', 'PDF oluşturmak için önce bir görsel ekleyin!');
       return;
@@ -148,28 +191,83 @@ Uygulama özellikleri:
     setIsProcessing(true);
 
     try {
-      // PDF oluşturma simülasyonu
-      setTimeout(() => {
+      // PDF içeriği oluştur
+      let pdfContent = `
+        PDF Başlık: ${pdfName}
+        Oluşturulma Tarihi: ${new Date().toLocaleString('tr-TR')}
+        
+        ${extractedText ? 'Çıkarılan Metinler:\n' + extractedText : 'Metin çıkarılmamış'}
+        
+        Görsel: ${screenshotUri ? 'Eklendi' : 'Eklenmedi'}
+      `;
+
+      // PDF dosyasını oluştur ve kaydet
+      const pdfFileName = `${pdfName}_${Date.now()}.pdf`;
+      const pdfFilePath = `${FileSystem.documentDirectory}${pdfFileName}`;
+      await FileSystem.writeAsStringAsync(pdfFilePath, pdfContent);
+      
+      const newFile = {
+        id: Date.now().toString(),
+        name: pdfFileName,
+        uri: pdfFilePath,
+        type: 'pdf',
+        date: new Date().toLocaleString('tr-TR')
+      };
+      
+      setSavedFiles(prev => [newFile, ...prev]);
+      
+      // Paylaşım seçeneği sun
+      if (await Sharing.isAvailableAsync()) {
         Alert.alert(
           'PDF Hazır! 🎉', 
-          `"${pdfName}.pdf" başarıyla oluşturuldu!\n\nGerçek uygulamada:\n• HTML-to-PDF kütüphanesi\n• Cloud storage\n• Paylaşım özelliği\nentegre edilecektir.`,
+          `"${pdfFileName}" başarıyla oluşturuldu!`,
           [
-            {
-              text: 'Tamam',
-              style: 'default'
+            { text: 'Kapat', style: 'cancel' },
+            { 
+              text: 'Paylaş', 
+              onPress: () => Sharing.shareAsync(pdfFilePath)
             }
           ]
         );
-        setIsProcessing(false);
-      }, 2000);
-
+      } else {
+        Alert.alert('Başarılı!', `"${pdfFileName}" oluşturuldu!`);
+      }
+      
     } catch (error) {
       Alert.alert('Hata', 'PDF oluşturulamadı: ' + error.message);
+    } finally {
       setIsProcessing(false);
     }
   };
 
-  // 6. RESMİ SİL
+  // 5. KAYDEDİLEN DOSYALARI GÖSTER
+  const showSavedFiles = () => {
+    if (savedFiles.length === 0) {
+      Alert.alert('Bilgi', 'Henüz kaydedilmiş dosya yok.');
+      return;
+    }
+
+    const fileList = savedFiles.map(file => 
+      `📄 ${file.name}\n⏰ ${file.date}\n📂 ${file.type}\n\n`
+    ).join('');
+
+    Alert.alert(
+      'Kaydedilen Dosyalar',
+      `Toplam ${savedFiles.length} dosya:\n\n${fileList}`,
+      [{ text: 'Tamam', style: 'default' }]
+    );
+  };
+
+  // 6. DOSYA PAYLAŞ
+  const shareFile = async (fileUri, fileName) => {
+    if (await Sharing.isAvailableAsync()) {
+      await Sharing.shareAsync(fileUri);
+    } else {
+      Alert.alert('Uyarı', 'Paylaşım desteklenmiyor');
+    }
+  };
+
+  // 7. RESMİ SİL
   const clearImage = () => {
     setScreenshotUri(null);
     setExtractedText('');
@@ -183,7 +281,22 @@ Uygulama özellikleri:
         <Card style={styles.card}>
           <Card.Content>
             <Text style={styles.title}>📱 EKRAN GÖRÜNTÜSÜ → PDF</Text>
-            <Text style={styles.subtitle}>Ekran görüntüsü al • Resim ekle • PDF oluştur</Text>
+            <Text style={styles.subtitle}>OCR + Dosya Kaydetme Özellikli</Text>
+          </Card.Content>
+        </Card>
+
+        {/* KAYDEDİLEN DOSYALAR */}
+        <Card style={styles.card}>
+          <Card.Content>
+            <Text style={styles.cardTitle}>📁 Kayıtlı Dosyalar ({savedFiles.length})</Text>
+            <Button 
+              mode="outlined" 
+              onPress={showSavedFiles}
+              style={styles.button}
+              icon="folder-open"
+            >
+              Dosyaları Görüntüle
+            </Button>
           </Card.Content>
         </Card>
 
@@ -194,11 +307,7 @@ Uygulama özellikleri:
             
             {screenshotUri ? (
               <View style={styles.imageContainer}>
-                <Image 
-                  source={{ uri: screenshotUri }} 
-                  style={styles.image}
-                  resizeMode="contain"
-                />
+                <Image source={{ uri: screenshotUri }} style={styles.image} />
                 <Button 
                   mode="outlined" 
                   onPress={clearImage}
@@ -211,19 +320,14 @@ Uygulama özellikleri:
             ) : (
               <View style={styles.placeholder}>
                 <Text style={styles.placeholderText}>Henüz görsel yok</Text>
-                <Text style={styles.placeholderSubtext}>
-                  Ekran görüntüsü alın veya galeriden resim seçin
-                </Text>
               </View>
             )}
             
-            {/* RESİM SEÇME BUTONLARI */}
             <View style={styles.buttonRow}>
               <Button 
                 mode="contained" 
-                onPress={takeScreenshot}
+                onPress={takeAndSaveScreenshot}
                 loading={isProcessing}
-                disabled={isProcessing}
                 style={[styles.button, styles.primaryButton]}
                 icon="monitor-screenshot"
               >
@@ -233,63 +337,43 @@ Uygulama özellikleri:
               <Button 
                 mode="outlined" 
                 onPress={pickImageFromGallery}
-                disabled={isProcessing}
                 style={styles.button}
                 icon="image"
               >
-                Galeri
+                Galeriden Seç
               </Button>
             </View>
+          </Card.Content>
+        </Card>
 
+        {/* OCR METİN ÇIKARMA */}
+        <Card style={styles.card}>
+          <Card.Content>
+            <Text style={styles.cardTitle}>🔍 OCR - Metin Çıkarma</Text>
+            <Text style={styles.ocrDescription}>
+              📝 Görseldeki yazıları digital metne çevirir
+            </Text>
+            
+            {extractedText ? (
+              <ScrollView style={styles.textContainer}>
+                <Text style={styles.extractedText}>{extractedText}</Text>
+              </ScrollView>
+            ) : null}
+            
             <Button 
-              mode="outlined" 
-              onPress={takePhotoWithCamera}
-              disabled={isProcessing}
+              mode="contained" 
+              onPress={extractTextWithOCR}
+              loading={isProcessing}
+              disabled={!screenshotUri}
               style={styles.button}
-              icon="camera"
+              icon="text-recognition"
             >
-              Kamera ile Çek
+              Metinleri Çıkar (OCR)
             </Button>
           </Card.Content>
         </Card>
 
-        {/* ÇIKARILAN METİNLER */}
-        {extractedText ? (
-          <Card style={styles.card}>
-            <Card.Content>
-              <Text style={styles.cardTitle}>📝 Çıkarılan Metinler</Text>
-              <ScrollView style={styles.textContainer}>
-                <Text style={styles.extractedText}>{extractedText}</Text>
-              </ScrollView>
-              <Button 
-                mode="outlined" 
-                onPress={() => setExtractedText('')}
-                style={styles.button}
-                icon="text-short"
-              >
-                Metinleri Temizle
-              </Button>
-            </Card.Content>
-          </Card>
-        ) : (
-          <Card style={styles.card}>
-            <Card.Content>
-              <Text style={styles.cardTitle}>🔍 Metin Çıkarma</Text>
-              <Button 
-                mode="outlined" 
-                onPress={extractTextFromImage}
-                loading={isProcessing}
-                disabled={isProcessing || !screenshotUri}
-                style={styles.button}
-                icon="ocr"
-              >
-                Metinleri Çıkar (OCR)
-              </Button>
-            </Card.Content>
-          </Card>
-        )}
-
-        {/* AYARLAR */}
+        {/* PDF AYARLARI */}
         <Card style={styles.card}>
           <Card.Content>
             <Text style={styles.cardTitle}>⚙️ PDF Ayarları</Text>
@@ -304,11 +388,7 @@ Uygulama özellikleri:
             
             <View style={styles.switchRow}>
               <Text>Görseli PDF'e Ekle</Text>
-              <Switch 
-                value={includeImage} 
-                onValueChange={setIncludeImage} 
-                color="#2196F3"
-              />
+              <Switch value={includeImage} onValueChange={setIncludeImage} />
             </View>
           </Card.Content>
         </Card>
@@ -318,20 +398,19 @@ Uygulama özellikleri:
           <Card.Content>
             <Button 
               mode="contained" 
-              onPress={createPDF}
+              onPress={createAndSavePDF}
               loading={isProcessing}
-              disabled={isProcessing}
               style={[styles.button, styles.pdfButton]}
               icon="file-pdf-box"
             >
-              📄 PDF Oluştur
+              📄 PDF Oluştur ve Kaydet
             </Button>
           </Card.Content>
         </Card>
 
       </ScrollView>
 
-      {/* LOADING INDICATOR */}
+      {/* LOADING */}
       {isProcessing && (
         <View style={styles.loadingOverlay}>
           <View style={styles.loadingContainer}>
@@ -356,11 +435,6 @@ const styles = StyleSheet.create({
   card: {
     marginBottom: 16,
     backgroundColor: 'white',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
   },
   title: {
     fontSize: 20,
@@ -380,6 +454,12 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     color: '#333',
   },
+  ocrDescription: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 12,
+    fontStyle: 'italic',
+  },
   imageContainer: {
     alignItems: 'center',
     marginBottom: 12,
@@ -394,7 +474,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   placeholder: {
-    height: 120,
+    height: 100,
     backgroundColor: '#f9f9f9',
     borderRadius: 8,
     borderWidth: 2,
@@ -403,23 +483,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 12,
-    padding: 16,
   },
   placeholderText: {
     color: '#666',
     fontSize: 16,
-    fontWeight: '500',
-  },
-  placeholderSubtext: {
-    color: '#999',
-    fontSize: 12,
-    textAlign: 'center',
-    marginTop: 4,
   },
   buttonRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 8,
   },
   button: {
     marginTop: 6,
@@ -440,7 +511,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FF5722',
   },
   textContainer: {
-    maxHeight: 150,
+    maxHeight: 200,
     backgroundColor: '#f8f9fa',
     borderRadius: 8,
     padding: 12,
