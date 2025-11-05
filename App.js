@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { 
   View, 
   Text, 
@@ -12,7 +12,7 @@ import { Button, Card, TextInput, Switch, ActivityIndicator } from 'react-native
 import { captureScreen } from 'react-native-view-shot';
 import * as ImagePicker from 'expo-image-picker';
 import * as MediaLibrary from 'expo-media-library';
-import * as FileSystem from 'expo-file-system';
+import { FileSystem } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 
 export default function App() {
@@ -48,7 +48,7 @@ export default function App() {
       
       setScreenshotUri(uri);
       
-      // Dosyayı kaydet
+      // Dosyayı kaydet (Yeni API)
       const permission = await MediaLibrary.requestPermissionsAsync();
       if (permission.granted) {
         const asset = await MediaLibrary.createAssetAsync(uri);
@@ -73,7 +73,7 @@ export default function App() {
     }
   };
 
-  // 2. GALERİDEN RESİM SEÇ ve KOPYALA
+  // 2. GALERİDEN RESİM SEÇ (Yeni FileSystem API)
   const pickImageFromGallery = async () => {
     try {
       const hasPermission = await requestPermissions();
@@ -90,31 +90,60 @@ export default function App() {
         const imageUri = result.assets[0].uri;
         setScreenshotUri(imageUri);
         
-        // Seçilen resmi uygulama dizinine kopyala
+        // YENİ FILE SYSTEM API - Basit kayıt
         const fileName = `selected_${Date.now()}.jpg`;
-        const newPath = `${FileSystem.documentDirectory}${fileName}`;
-        await FileSystem.copyAsync({
-          from: imageUri,
-          to: newPath
-        });
-        
-        const newFile = {
+        const fileInfo = {
           id: Date.now().toString(),
           name: fileName,
-          uri: newPath,
+          uri: imageUri, // Orijinal URI'yi kullan
           type: 'gallery',
           date: new Date().toLocaleString('tr-TR')
         };
         
-        setSavedFiles(prev => [newFile, ...prev]);
-        Alert.alert('Başarılı!', 'Resim seçildi ve uygulamaya kaydedildi 🖼️');
+        setSavedFiles(prev => [fileInfo, ...prev]);
+        Alert.alert('Başarılı!', 'Resim başarıyla seçildi 🖼️');
       }
     } catch (error) {
       Alert.alert('Hata', 'Resim seçilemedi: ' + error.message);
     }
   };
 
-  // 3. GERÇEK OCR FONKSİYONU (Türkçe destekli)
+  // 3. KAMERA İLE FOTOĞRAF ÇEK
+  const takePhotoWithCamera = async () => {
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('İzin gerekli', 'Kamera kullanımı için izin gerekiyor!');
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+      });
+
+      if (!result.canceled) {
+        const imageUri = result.assets[0].uri;
+        setScreenshotUri(imageUri);
+        
+        const fileInfo = {
+          id: Date.now().toString(),
+          name: `camera_${Date.now()}.jpg`,
+          uri: imageUri,
+          type: 'camera',
+          date: new Date().toLocaleString('tr-TR')
+        };
+        
+        setSavedFiles(prev => [fileInfo, ...prev]);
+        Alert.alert('Başarılı!', 'Fotoğraf çekildi ve kaydedildi 📷');
+      }
+    } catch (error) {
+      Alert.alert('Hata', 'Kamera açılamadı: ' + error.message);
+    }
+  };
+
+  // 4. OCR METİN ÇIKARMA
   const extractTextWithOCR = async () => {
     if (!screenshotUri) {
       Alert.alert('Uyarı', 'Önce bir görsel seçin!');
@@ -124,55 +153,57 @@ export default function App() {
     setIsProcessing(true);
 
     try {
-      // Gerçek OCR simülasyonu - Türkçe metin çıkarma
+      // Gerçek OCR simülasyonu
       const turkishText = `
 🔍 **OCR İLE ÇIKARILAN METİNLER**
 
 📅 Tarih: ${new Date().toLocaleDateString('tr-TR')}
 ⏰ Saat: ${new Date().toLocaleTimeString('tr-TR')}
 
-📋 **ÖRNEK ÇIKTI:**
-Merhaba! Bu bir OCR demo metnidir.
+📋 **ÖRNEK METİN:**
+Merhaba! Bu bir OCR demo çıktısıdır.
 
-📊 **TABLO VERİLERİ:**
-• Ürün: Laptop - Fiyat: 7.500 TL
-• Ürün: Mouse - Fiyat: 250 TL
-• Ürün: Klavye - Fiyat: 450 TL
+🛒 **ALIŞVERİŞ LİSTESİ:**
+• Elma - 15 TL/kg
+• Ekmek - 8 TL
+• Süt - 25 TL
+• Peynir - 120 TL
 
-📈 **TOPLAM: 8.200 TL**
+💰 **TOPLAM: 168 TL**
 
-📍 **ADRES BİLGİSİ:**
-İstiklal Caddesi No: 123
-Beyoğlu/İSTANBUL
+📍 **FATURA BİLGİSİ:**
+ABC Market
+Atatürk Cad. No: 123
+İSTANBUL
 
 📞 **İLETİŞİM:**
-Telefon: (0212) 123 45 67
-E-posta: info@ornek.com
+0555 123 45 67
 
-💡 **OCR NE İŞE YARAR?**
-✓ Faturalardaki yazıları okur
-✓ El yazısını digital metne çevirir
-✓ Tabloları Excel'e aktarır
+💡 **OCR AVANTAJLARI:**
+✓ Faturaları digitalleştirir
+✓ El yazısını okur
+✓ Veri girişini hızlandırır
 ✓ Dokümanları aranabilir yapar
       `;
       
       setExtractedText(turkishText);
       
-      // Çıkarılan metni dosyaya kaydet
+      // Metni dosyaya kaydet (Yeni API)
       const textFileName = `extracted_text_${Date.now()}.txt`;
-      const textFilePath = `${FileSystem.documentDirectory}${textFileName}`;
-      await FileSystem.writeAsStringAsync(textFilePath, turkishText);
+      const textFileUri = FileSystem.documentDirectory + textFileName;
+      
+      await FileSystem.writeAsStringAsync(textFileUri, turkishText);
       
       const newFile = {
         id: Date.now().toString(),
         name: textFileName,
-        uri: textFilePath,
+        uri: textFileUri,
         type: 'text',
         date: new Date().toLocaleString('tr-TR')
       };
       
       setSavedFiles(prev => [newFile, ...prev]);
-      Alert.alert('Başarılı!', 'Metinler çıkarıldı ve dosyaya kaydedildi! 🔍');
+      Alert.alert('Başarılı!', 'Metinler çıkarıldı ve kaydedildi! 🔍');
       
     } catch (error) {
       Alert.alert('Hata', 'Metin çıkarılamadı: ' + error.message);
@@ -181,7 +212,7 @@ E-posta: info@ornek.com
     }
   };
 
-  // 4. PDF OLUŞTUR ve KAYDET
+  // 5. PDF OLUŞTUR ve KAYDET (Yeni API)
   const createAndSavePDF = async () => {
     if (!screenshotUri && includeImage) {
       Alert.alert('Uyarı', 'PDF oluşturmak için önce bir görsel ekleyin!');
@@ -192,31 +223,38 @@ E-posta: info@ornek.com
 
     try {
       // PDF içeriği oluştur
-      let pdfContent = `
-        PDF Başlık: ${pdfName}
-        Oluşturulma Tarihi: ${new Date().toLocaleString('tr-TR')}
-        
-        ${extractedText ? 'Çıkarılan Metinler:\n' + extractedText : 'Metin çıkarılmamış'}
-        
-        Görsel: ${screenshotUri ? 'Eklendi' : 'Eklenmedi'}
+      const pdfContent = `
+PDF RAPORU
+==========
+
+Başlık: ${pdfName}
+Oluşturulma: ${new Date().toLocaleString('tr-TR')}
+
+${extractedText ? 'ÇIKARILAN METİNLER:\n' + extractedText : 'Metin çıkarılmamış'}
+
+Görsel Durumu: ${screenshotUri ? 'EKLENDİ' : 'EKLENMEDİ'}
+Görsel Yolu: ${screenshotUri || 'Yok'}
+
+--- Uygulama: Ekran Görüntüsü PDF Dönüştürücü ---
       `;
 
-      // PDF dosyasını oluştur ve kaydet
-      const pdfFileName = `${pdfName}_${Date.now()}.pdf`;
-      const pdfFilePath = `${FileSystem.documentDirectory}${pdfFileName}`;
-      await FileSystem.writeAsStringAsync(pdfFilePath, pdfContent);
+      // PDF dosyasını oluştur (Yeni API)
+      const pdfFileName = `${pdfName}_${Date.now()}.txt`; // .txt olarak kaydedelim
+      const pdfFileUri = FileSystem.documentDirectory + pdfFileName;
+      
+      await FileSystem.writeAsStringAsync(pdfFileUri, pdfContent);
       
       const newFile = {
         id: Date.now().toString(),
         name: pdfFileName,
-        uri: pdfFilePath,
+        uri: pdfFileUri,
         type: 'pdf',
         date: new Date().toLocaleString('tr-TR')
       };
       
       setSavedFiles(prev => [newFile, ...prev]);
       
-      // Paylaşım seçeneği sun
+      // Paylaşım seçeneği
       if (await Sharing.isAvailableAsync()) {
         Alert.alert(
           'PDF Hazır! 🎉', 
@@ -225,7 +263,7 @@ E-posta: info@ornek.com
             { text: 'Kapat', style: 'cancel' },
             { 
               text: 'Paylaş', 
-              onPress: () => Sharing.shareAsync(pdfFilePath)
+              onPress: () => Sharing.shareAsync(pdfFileUri)
             }
           ]
         );
@@ -240,7 +278,7 @@ E-posta: info@ornek.com
     }
   };
 
-  // 5. KAYDEDİLEN DOSYALARI GÖSTER
+  // 6. KAYDEDİLEN DOSYALARI GÖSTER
   const showSavedFiles = () => {
     if (savedFiles.length === 0) {
       Alert.alert('Bilgi', 'Henüz kaydedilmiş dosya yok.');
@@ -252,22 +290,60 @@ E-posta: info@ornek.com
     ).join('');
 
     Alert.alert(
-      'Kaydedilen Dosyalar',
-      `Toplam ${savedFiles.length} dosya:\n\n${fileList}`,
+      `Kaydedilen Dosyalar (${savedFiles.length})`,
+      fileList,
       [{ text: 'Tamam', style: 'default' }]
     );
   };
 
-  // 6. DOSYA PAYLAŞ
-  const shareFile = async (fileUri, fileName) => {
-    if (await Sharing.isAvailableAsync()) {
-      await Sharing.shareAsync(fileUri);
-    } else {
-      Alert.alert('Uyarı', 'Paylaşım desteklenmiyor');
+  // 7. DOSYA SİL
+  const deleteFile = async (fileId, fileName) => {
+    try {
+      const fileToDelete = savedFiles.find(file => file.id === fileId);
+      if (fileToDelete) {
+        // Dosyayı fiziksel olarak sil
+        await FileSystem.deleteAsync(fileToDelete.uri).catch(() => {
+          console.log('Dosya zaten silinmiş veya silinemiyor');
+        });
+        
+        // Listeden kaldır
+        setSavedFiles(prev => prev.filter(file => file.id !== fileId));
+        Alert.alert('Başarılı', `"${fileName}" silindi.`);
+      }
+    } catch (error) {
+      Alert.alert('Hata', 'Dosya silinemedi: ' + error.message);
     }
   };
 
-  // 7. RESMİ SİL
+  // 8. TÜM DOSYALARI SİL
+  const clearAllFiles = () => {
+    if (savedFiles.length === 0) {
+      Alert.alert('Bilgi', 'Silinecek dosya yok.');
+      return;
+    }
+
+    Alert.alert(
+      'Tüm Dosyaları Sil',
+      `${savedFiles.length} dosyayı silmek istediğinizden emin misiniz?`,
+      [
+        { text: 'İptal', style: 'cancel' },
+        { 
+          text: 'Evet, Sil', 
+          style: 'destructive',
+          onPress: () => {
+            // Tüm dosyaları fiziksel olarak sil
+            savedFiles.forEach(async (file) => {
+              await FileSystem.deleteAsync(file.uri).catch(() => {});
+            });
+            setSavedFiles([]);
+            Alert.alert('Başarılı', 'Tüm dosyalar silindi.');
+          }
+        }
+      ]
+    );
+  };
+
+  // 9. RESMİ SİL
   const clearImage = () => {
     setScreenshotUri(null);
     setExtractedText('');
@@ -281,29 +357,40 @@ E-posta: info@ornek.com
         <Card style={styles.card}>
           <Card.Content>
             <Text style={styles.title}>📱 EKRAN GÖRÜNTÜSÜ → PDF</Text>
-            <Text style={styles.subtitle}>OCR + Dosya Kaydetme Özellikli</Text>
+            <Text style={styles.subtitle}>Yeni FileSystem API + OCR + Kayıt</Text>
           </Card.Content>
         </Card>
 
-        {/* KAYDEDİLEN DOSYALAR */}
+        {/* DOSYA YÖNETİMİ */}
         <Card style={styles.card}>
           <Card.Content>
-            <Text style={styles.cardTitle}>📁 Kayıtlı Dosyalar ({savedFiles.length})</Text>
-            <Button 
-              mode="outlined" 
-              onPress={showSavedFiles}
-              style={styles.button}
-              icon="folder-open"
-            >
-              Dosyaları Görüntüle
-            </Button>
+            <Text style={styles.cardTitle}>📁 Dosya Yönetimi ({savedFiles.length})</Text>
+            <View style={styles.fileButtonsRow}>
+              <Button 
+                mode="outlined" 
+                onPress={showSavedFiles}
+                style={styles.smallButton}
+                icon="folder-open"
+              >
+                Görüntüle
+              </Button>
+              <Button 
+                mode="outlined" 
+                onPress={clearAllFiles}
+                style={styles.smallButton}
+                icon="delete-sweep"
+                textColor="#ff4444"
+              >
+                Temizle
+              </Button>
+            </View>
           </Card.Content>
         </Card>
 
-        {/* GÖRSEL BÖLÜMÜ */}
+        {/* GÖRSEL SEÇME */}
         <Card style={styles.card}>
           <Card.Content>
-            <Text style={styles.cardTitle}>🖼️ Görsel</Text>
+            <Text style={styles.cardTitle}>🖼️ Görsel Seç</Text>
             
             {screenshotUri ? (
               <View style={styles.imageContainer}>
@@ -314,12 +401,15 @@ E-posta: info@ornek.com
                   style={styles.clearButton}
                   icon="delete"
                 >
-                  Resmi Sil
+                  Görseli Temizle
                 </Button>
               </View>
             ) : (
               <View style={styles.placeholder}>
-                <Text style={styles.placeholderText}>Henüz görsel yok</Text>
+                <Text style={styles.placeholderText}>Görsel seçilmedi</Text>
+                <Text style={styles.placeholderSubtext}>
+                  Aşağıdaki seçeneklerden birini kullanın
+                </Text>
               </View>
             )}
             
@@ -331,7 +421,7 @@ E-posta: info@ornek.com
                 style={[styles.button, styles.primaryButton]}
                 icon="monitor-screenshot"
               >
-                Ekran Görüntüsü
+                Ekran Gör.
               </Button>
               
               <Button 
@@ -340,7 +430,16 @@ E-posta: info@ornek.com
                 style={styles.button}
                 icon="image"
               >
-                Galeriden Seç
+                Galeri
+              </Button>
+
+              <Button 
+                mode="outlined" 
+                onPress={takePhotoWithCamera}
+                style={styles.button}
+                icon="camera"
+              >
+                Kamera
               </Button>
             </View>
           </Card.Content>
@@ -351,7 +450,7 @@ E-posta: info@ornek.com
           <Card.Content>
             <Text style={styles.cardTitle}>🔍 OCR - Metin Çıkarma</Text>
             <Text style={styles.ocrDescription}>
-              📝 Görseldeki yazıları digital metne çevirir
+              Görseldeki yazıları digital metne dönüştürür
             </Text>
             
             {extractedText ? (
@@ -368,7 +467,7 @@ E-posta: info@ornek.com
               style={styles.button}
               icon="text-recognition"
             >
-              Metinleri Çıkar (OCR)
+              Metinleri Çıkar
             </Button>
           </Card.Content>
         </Card>
@@ -435,6 +534,7 @@ const styles = StyleSheet.create({
   card: {
     marginBottom: 16,
     backgroundColor: 'white',
+    elevation: 2,
   },
   title: {
     fontSize: 20,
@@ -483,20 +583,36 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 12,
+    padding: 16,
   },
   placeholderText: {
     color: '#666',
     fontSize: 16,
+    fontWeight: '500',
+  },
+  placeholderSubtext: {
+    color: '#999',
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 4,
   },
   buttonRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  fileButtonsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
   button: {
     marginTop: 6,
   },
-  primaryButton: {
+  smallButton: {
     flex: 0.48,
+    marginTop: 6,
+  },
+  primaryButton: {
+    flex: 0.3,
   },
   input: {
     marginBottom: 16,
