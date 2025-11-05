@@ -1,491 +1,246 @@
-import React, { useState } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  Alert, 
-  ScrollView, 
-  Image,
-  SafeAreaView,
-  Platform,
-  StatusBar 
-} from 'react-native';
-import { Button, Card } from 'react-native-paper';
-import * as ImagePicker from 'expo-image-picker';
-import * as Sharing from 'expo-sharing';
-import * as FileSystem from 'expo-file-system';
+import React, { useState, useEffect, useRef } from 'react';
 
-export default function App() {
-  const [selectedImage, setSelectedImage] = useState(null);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [savedPDFs, setSavedPDFs] = useState([]);
+// Kütüphane Notu:
+// jsPDF, tarayıcı tabanlı bir kütüphane olduğu için
+// bu tekil React dosyasında, bir CDN script etiketi ile
+// HTML body içinde zaten yüklenmiş kabul edilir.
 
-  // iPhone üst boşluk için
-  const statusBarHeight = Platform.OS === 'ios' ? 50 : StatusBar.currentHeight || 0;
+// Yükleme ve Durum Modalları için Bileşenler
+const LoadingModal = ({ isVisible }) => (
+    <div 
+        className={`fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center transition-opacity duration-300 ${isVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+    >
+        <div className="bg-indigo-600 text-white rounded-xl shadow-2xl p-8 flex flex-col items-center">
+            <div className="spinner mb-4 border-4 border-white/30 border-t-white rounded-full w-10 h-10 animate-spin"></div>
+            <p className="text-lg font-semibold">PDF Oluşturuluyor...</p>
+            <p className="text-sm mt-2">Lütfen işlem tamamlanana kadar bekleyin.</p>
+        </div>
+    </div>
+);
 
-  // 1. GALERİDEN RESİM SEÇ
-  const pickImageFromGallery = async () => {
-    try {
-      // İzin kontrolü
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('İzin Gerekli', 'Galeriye erişim için izin gerekiyor!');
-        return;
-      }
+const StatusModal = ({ status, hideModal }) => {
+    if (!status.isVisible) return null;
 
-      // Galeriyi aç
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [4, 3],
-        quality: 0.8,
-      });
+    const isError = status.type === 'error';
+    const titleClass = isError ? 'text-red-600' : 'text-green-600';
 
-      if (!result.canceled && result.assets[0]) {
-        setSelectedImage(result.assets[0].uri);
-        Alert.alert('Başarılı', 'Resim seçildi!');
-      }
-    } catch (error) {
-      Alert.alert('Hata', 'Resim seçilemedi: ' + error.message);
-    }
-  };
-
-  // 2. KAMERA İLE FOTOĞRAF ÇEK
-  const takePhotoWithCamera = async () => {
-    try {
-      // Kamera izni
-      const { status } = await ImagePicker.requestCameraPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('İzin Gerekli', 'Kamera kullanımı için izin gerekiyor!');
-        return;
-      }
-
-      // Kamerayı aç
-      const result = await ImagePicker.launchCameraAsync({
-        allowsEditing: true,
-        aspect: [4, 3],
-        quality: 0.8,
-      });
-
-      if (!result.canceled && result.assets[0]) {
-        setSelectedImage(result.assets[0].uri);
-        Alert.alert('Başarılı', 'Fotoğraf çekildi!');
-      }
-    } catch (error) {
-      Alert.alert('Hata', 'Kamera açılamadı: ' + error.message);
-    }
-  };
-
-  // 3. PDF OLUŞTUR ve KAYDET
-  const createAndSavePDF = async () => {
-    if (!selectedImage) {
-      Alert.alert('Uyarı', 'Önce bir resim seçin!');
-      return;
-    }
-
-    setIsProcessing(true);
-
-    try {
-      // PDF içeriği oluştur
-      const pdfContent = `
-GÖRSELDEN PDF'E DÖNÜŞTÜRME
-
-Oluşturulma Tarihi: ${new Date().toLocaleString('tr-TR')}
-Görsel Kaynağı: ${selectedImage}
-
-Bu PDF, mobil uygulama ile görselden oluşturulmuştur.
-
-Uygulama: Görselden PDF Dönüştürücü
-      `;
-
-      // Benzersiz dosya adı oluştur
-      const timestamp = new Date().getTime();
-      const fileName = `gorsel_pdf_${timestamp}.txt`;
-      const fileUri = FileSystem.documentDirectory + fileName;
-
-      // Dosyayı kaydet
-      await FileSystem.writeAsStringAsync(fileUri, pdfContent);
-
-      // Kaydedilen PDF'i listeye ekle
-      const newPDF = {
-        id: timestamp.toString(),
-        name: fileName,
-        uri: fileUri,
-        path: fileUri,
-        date: new Date().toLocaleString('tr-TR'),
-        size: pdfContent.length
-      };
-
-      setSavedPDFs(prev => [newPDF, ...prev]);
-
-      // Başarı mesajı ve dosya bilgisi
-      Alert.alert(
-        'PDF Hazır! 🎉', 
-        `Dosya başarıyla kaydedildi!\n\n📁 Dosya: ${fileName}\n📊 Boyut: ${pdfContent.length} byte\n📍 Konum: Uygulama Dizini`,
-        [
-          { 
-            text: 'Dosyayı Aç', 
-            onPress: () => openPDFFile(fileUri, fileName)
-          },
-          { 
-            text: 'Tamam', 
-            style: 'cancel' 
-          }
-        ]
-      );
-
-    } catch (error) {
-      Alert.alert('Hata', 'PDF oluşturulamadı: ' + error.message);
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  // 4. PDF DOSYASINI AÇ/PAYLAŞ
-  const openPDFFile = async (fileUri, fileName) => {
-    try {
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(fileUri, {
-          mimeType: 'text/plain',
-          dialogTitle: `PDF Dosyasını Paylaş: ${fileName}`,
-        });
-      } else {
-        Alert.alert('Bilgi', 'Paylaşım desteklenmiyor. Dosya şurada kaydedildi: ' + fileUri);
-      }
-    } catch (error) {
-      Alert.alert('Hata', 'Dosya açılamadı: ' + error.message);
-    }
-  };
-
-  // 5. KAYDEDİLEN DOSYALARI GÖSTER
-  const showSavedFiles = () => {
-    if (savedPDFs.length === 0) {
-      Alert.alert('Bilgi', 'Henüz kaydedilmiş PDF dosyası yok.');
-      return;
-    }
-
-    const fileList = savedPDFs.map((file, index) => 
-      `📄 ${file.name}\n⏰ ${file.date}\n📊 ${file.size} byte\n\n`
-    ).join('');
-
-    Alert.alert(
-      `Kayıtlı PDF Dosyaları (${savedPDFs.length})`,
-      fileList,
-      [
-        { text: 'Tamam', style: 'default' }
-      ]
-    );
-  };
-
-  // 6. DOSYA YOLUNU GÖSTER
-  const showFileLocation = () => {
-    Alert.alert(
-      '📁 Dosya Konumları',
-      `Uygulama Dizini: ${FileSystem.documentDirectory}\n\nDosyalarınız bu dizinde kaydediliyor. Paylaş butonu ile diğer uygulamalarda açabilirsiniz.`,
-      [
-        { text: 'Anladım', style: 'default' }
-      ]
-    );
-  };
-
-  // 7. RESMİ SİL
-  const clearImage = () => {
-    setSelectedImage(null);
-  };
-
-  return (
-    <SafeAreaView style={[styles.container, { paddingTop: statusBarHeight }]}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        
-        {/* BAŞLIK */}
-        <Card style={styles.headerCard}>
-          <Card.Content>
-            <Text style={styles.title}>📸 Görselden PDF Oluştur</Text>
-            <Text style={styles.subtitle}>Resim seç → PDF yap → Kaydet → Aç</Text>
-          </Card.Content>
-        </Card>
-
-        {/* DOSYA BİLGİSİ */}
-        <Card style={styles.infoCard}>
-          <Card.Content>
-            <Text style={styles.infoTitle}>📁 Dosya Bilgisi</Text>
-            <Text style={styles.infoText}>
-              • PDF'ler uygulama dizinine kaydedilir{'\n'}
-              • Paylaş butonu ile dosyayı açabilirsiniz{'\n'}
-              • Toplam {savedPDFs.length} PDF kayıtlı
-            </Text>
-            <View style={styles.fileButtonsRow}>
-              <Button 
-                mode="outlined" 
-                onPress={showSavedFiles}
-                style={styles.smallButton}
-                icon="folder-open"
-              >
-                Dosyaları Gör
-              </Button>
-              <Button 
-                mode="outlined" 
-                onPress={showFileLocation}
-                style={styles.smallButton}
-                icon="information"
-              >
-                Konum Bilgisi
-              </Button>
-            </View>
-          </Card.Content>
-        </Card>
-
-        {/* SEÇİLEN GÖRSEL */}
-        <Card style={styles.card}>
-          <Card.Content>
-            <Text style={styles.cardTitle}>🖼️ Seçilen Görsel</Text>
-            
-            {selectedImage ? (
-              <View style={styles.imageContainer}>
-                <Image 
-                  source={{ uri: selectedImage }} 
-                  style={styles.image}
-                  resizeMode="contain"
-                />
-                <Button 
-                  mode="outlined" 
-                  onPress={clearImage}
-                  style={styles.clearButton}
-                  icon="delete"
+    return (
+        <div 
+            className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center p-4"
+            onClick={hideModal}
+        >
+            <div 
+                className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm" 
+                onClick={(e) => e.stopPropagation()}
+            >
+                <h3 className={`text-2xl font-bold mb-3 ${titleClass}`}>{status.title}</h3>
+                <p className="text-gray-700 mb-6">{status.message}</p>
+                <button 
+                    onClick={hideModal} 
+                    className="w-full py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
                 >
-                  Resmi Sil
-                </Button>
-              </View>
-            ) : (
-              <View style={styles.placeholder}>
-                <Text style={styles.placeholderText}>Henüz resim seçilmedi</Text>
-                <Text style={styles.placeholderSubtext}>
-                  Aşağıdan resim ekleyin
-                </Text>
-              </View>
-            )}
-          </Card.Content>
-        </Card>
+                    Kapat
+                </button>
+            </div>
+        </div>
+    );
+};
 
-        {/* RESİM SEÇME BUTONLARI */}
-        <Card style={styles.card}>
-          <Card.Content>
-            <Text style={styles.cardTitle}>📁 Resim Ekle</Text>
+// Base64 okuma işlemini Promise ile saran yardımcı fonksiyon
+const readFileAsBase64 = (file) => {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = error => reject(error);
+        reader.readAsDataURL(file);
+    });
+};
+
+const App = () => {
+    const [selectedFiles, setSelectedFiles] = useState([]);
+    const [isLoading, setIsLoading] = useState(false);
+    const [status, setStatus] = useState({ isVisible: false, title: '', message: '', type: '' });
+
+    // Global değişkenleri React bileşeni içinde tanımlıyoruz (Zorunlu Canvas Kuralı)
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+    const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+
+    // Dosya seçme event'ı
+    const handleFileChange = (e) => {
+        const files = Array.from(e.target.files).filter(file => file.type.startsWith('image/'));
+        setSelectedFiles(files);
+    };
+
+    // Durum modalını gizle
+    const hideStatusModal = () => {
+        setStatus(prev => ({ ...prev, isVisible: false }));
+    };
+
+    // PDF Oluşturma Fonksiyonu
+    const generatePdf = async () => {
+        if (selectedFiles.length === 0) {
+            setStatus({ 
+                isVisible: true, 
+                title: 'Uyarı', 
+                message: 'Lütfen önce PDF oluşturmak istediğiniz görselleri seçin.', 
+                type: 'error' 
+            });
+            return;
+        }
+
+        setIsLoading(true);
+        try {
+            // jspdf kütüphanesini window nesnesinden alıyoruz (CDN ile yüklü varsayılır)
+            const { jsPDF } = window;
             
-            <Button 
-              mode="contained" 
-              onPress={pickImageFromGallery}
-              style={styles.button}
-              icon="image"
-              disabled={isProcessing}
-            >
-              Galeriden Seç
-            </Button>
+            const a4Width = 210;
+            const a4Height = 297;
+
+            let doc = new jsPDF({
+                orientation: 'portrait',
+                unit: 'mm',
+                format: 'a4'
+            });
+
+            let isFirstPage = true;
+
+            for (const file of selectedFiles) {
+                if (!file.type.startsWith('image/')) continue;
+                
+                if (!isFirstPage) {
+                    doc.addPage();
+                } else {
+                    isFirstPage = false;
+                }
+
+                const base64Image = await readFileAsBase64(file);
+                const imgType = file.type.split('/')[1];
+
+                const img = new Image();
+                await new Promise(resolve => {
+                    img.onload = resolve;
+                    img.src = base64Image;
+                });
+                
+                const imgWidth = img.width;
+                const imgHeight = img.height;
+
+                const margin = 10; 
+                const usableWidth = a4Width - 2 * margin;
+                const usableHeight = a4Height - 2 * margin;
+
+                let ratio = Math.min(usableWidth / imgWidth, usableHeight / imgHeight);
+                
+                let targetWidth = imgWidth * ratio;
+                let targetHeight = imgHeight * ratio;
+
+                const x = (a4Width - targetWidth) / 2;
+                const y = (a4Height - targetHeight) / 2;
+
+                doc.addImage(
+                    base64Image, 
+                    imgType.toUpperCase(), 
+                    x, 
+                    y, 
+                    targetWidth, 
+                    targetHeight, 
+                    null, 
+                    'FAST'
+                );
+            }
+
+            doc.save('gorsellerden_pdf.pdf');
             
-            <Button 
-              mode="outlined" 
-              onPress={takePhotoWithCamera}
-              style={styles.button}
-              icon="camera"
-              disabled={isProcessing}
-            >
-              Kamera ile Çek
-            </Button>
-          </Card.Content>
-        </Card>
+            setStatus({ 
+                isVisible: true, 
+                title: 'Başarılı', 
+                message: `${selectedFiles.length} görselden oluşan PDF başarıyla oluşturuldu ve cihazınıza kaydedildi.`, 
+                type: 'success' 
+            });
 
-        {/* PDF OLUŞTUR BUTONU */}
-        <Card style={styles.card}>
-          <Card.Content>
-            <Text style={styles.cardTitle}>📄 PDF İşlemleri</Text>
-            
-            <Button 
-              mode="contained" 
-              onPress={createAndSavePDF}
-              loading={isProcessing}
-              disabled={isProcessing || !selectedImage}
-              style={[styles.button, styles.pdfButton]}
-              icon="file-pdf-box"
-            >
-              PDF Oluştur ve Kaydet
-            </Button>
+        } catch (error) {
+            console.error('PDF oluşturulurken bir hata oluştu:', error);
+            setStatus({ 
+                isVisible: true, 
+                title: 'Hata', 
+                message: `PDF oluşturulurken beklenmedik bir hata oluştu: ${error.message}. Lütfen konsolu kontrol edin.`, 
+                type: 'error' 
+            });
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
-            <Text style={styles.pdfInfo}>
-              PDF oluşturulduğunda:{'\n'}
-              • Dosya yolunu göreceksiniz{'\n'}
-              • Hemen açıp paylaşabileceksiniz{'\n'}
-              • Tüm dosyaları listeleyebileceksiniz
-            </Text>
-          </Card.Content>
-        </Card>
+    return (
+        <div className="bg-gray-100 min-h-screen p-0 sm:p-4 flex flex-col items-center font-inter">
+            <div className="w-full max-w-lg mx-auto bg-white shadow-lg sm:rounded-xl p-4 md:p-6 mt-0 sm:mt-8 min-h-screen sm:min-h-0">
+                
+                <h1 className="text-3xl font-extrabold text-indigo-700 mb-6 border-b pb-2">Mobil PDF Dönüştürücü</h1>
+                <p className="text-gray-600 mb-8">PDF oluşturmak için görselleri seçin. Her görsel yeni bir sayfaya yerleştirilecektir.</p>
 
-        {/* SON KAYDEDİLENLER */}
-        {savedPDFs.length > 0 && (
-          <Card style={styles.savedFilesCard}>
-            <Card.Content>
-              <Text style={styles.cardTitle}>📋 Son PDF'ler</Text>
-              {savedPDFs.slice(0, 3).map((file) => (
-                <View key={file.id} style={styles.fileItem}>
-                  <Text style={styles.fileName}>📄 {file.name}</Text>
-                  <Text style={styles.fileDate}>⏰ {file.date}</Text>
-                  <Button 
-                    mode="text" 
-                    onPress={() => openPDFFile(file.uri, file.name)}
-                    style={styles.openButton}
-                    icon="open-in-app"
-                  >
-                    Aç
-                  </Button>
-                </View>
-              ))}
-            </Card.Content>
-          </Card>
-        )}
+                {/* Dosya Seçme Alanı */}
+                <div className="mb-10">
+                    <label htmlFor="fileInput" className="block text-lg font-medium text-gray-700 mb-2">Görsel Dosyaları</label>
+                    <input 
+                        type="file" 
+                        id="fileInput" 
+                        accept="image/*" 
+                        multiple 
+                        onChange={handleFileChange}
+                        className="block w-full text-sm text-gray-900 border border-gray-300 rounded-lg cursor-pointer bg-gray-50 p-4 
+                                file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold 
+                                file:bg-indigo-500 file:text-white hover:file:bg-indigo-600 transition"
+                    />
+                </div>
 
-      </ScrollView>
-    </SafeAreaView>
-  );
-}
+                {/* Seçilen Görsellerin Önizleme Alanı */}
+                <div className="mb-8">
+                    <h2 
+                        className={`text-xl font-semibold text-gray-700 mb-4 ${selectedFiles.length === 0 ? 'hidden' : ''}`}
+                    >
+                        Seçilen Görseller
+                    </h2>
+                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-4 p-4 border border-dashed border-gray-300 rounded-lg min-h-24 bg-gray-50">
+                        {selectedFiles.length === 0 ? (
+                            <p className="col-span-full text-center text-gray-400 italic py-6">Henüz görsel seçilmedi.</p>
+                        ) : (
+                            selectedFiles.map((file, index) => (
+                                <div key={index} className="relative group aspect-square rounded-lg overflow-hidden shadow-md">
+                                    <img 
+                                        src={URL.createObjectURL(file)} 
+                                        alt={file.name} 
+                                        className="w-full h-full object-cover transition-transform duration-300"
+                                    />
+                                    <div className="absolute bottom-0 left-0 right-0 p-1 bg-black bg-opacity-50 text-white text-xs text-center truncate">
+                                        {file.name}
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f8f9fa',
-  },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 32,
-  },
-  headerCard: {
-    marginBottom: 16,
-    backgroundColor: 'white',
-    elevation: 4,
-  },
-  card: {
-    marginBottom: 16,
-    backgroundColor: 'white',
-    elevation: 2,
-  },
-  infoCard: {
-    marginBottom: 16,
-    backgroundColor: '#e3f2fd',
-    borderColor: '#2196F3',
-  },
-  savedFilesCard: {
-    marginBottom: 16,
-    backgroundColor: '#f3e5f5',
-    borderColor: '#9c27b0',
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    color: '#2c3e50',
-  },
-  subtitle: {
-    textAlign: 'center',
-    color: '#7f8c8d',
-    marginTop: 8,
-    fontSize: 14,
-  },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 16,
-    color: '#34495e',
-  },
-  infoTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 12,
-    color: '#1976d2',
-  },
-  infoText: {
-    fontSize: 14,
-    color: '#555',
-    lineHeight: 20,
-    marginBottom: 12,
-  },
-  pdfInfo: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 12,
-    lineHeight: 16,
-    fontStyle: 'italic',
-  },
-  imageContainer: {
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  image: {
-    width: '100%',
-    height: 250,
-    borderRadius: 12,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#ddd',
-  },
-  clearButton: {
-    marginTop: 8,
-  },
-  placeholder: {
-    height: 120,
-    backgroundColor: '#f8f9fa',
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#dee2e6',
-    borderStyle: 'dashed',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-    padding: 20,
-  },
-  placeholderText: {
-    color: '#6c757d',
-    fontSize: 16,
-    fontWeight: '500',
-    textAlign: 'center',
-  },
-  placeholderSubtext: {
-    color: '#adb5bd',
-    fontSize: 12,
-    textAlign: 'center',
-    marginTop: 8,
-  },
-  button: {
-    marginTop: 8,
-  },
-  smallButton: {
-    marginTop: 6,
-    marginHorizontal: 4,
-  },
-  fileButtonsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  pdfButton: {
-    backgroundColor: '#e74c3c',
-  },
-  fileItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  fileName: {
-    flex: 2,
-    fontSize: 12,
-    color: '#333',
-  },
-  fileDate: {
-    flex: 1,
-    fontSize: 10,
-    color: '#666',
-    textAlign: 'center',
-  },
-  openButton: {
-    flex: 0.5,
-  },
-});
+                {/* Ana İşlem Butonu */}
+                <div className="mt-8 pb-4">
+                    <button 
+                        onClick={generatePdf} 
+                        disabled={selectedFiles.length === 0 || isLoading} 
+                        className="w-full px-6 py-4 text-xl font-bold text-white bg-indigo-600 rounded-xl shadow-lg 
+                                hover:bg-indigo-700 transition duration-150 disabled:bg-indigo-400 disabled:cursor-not-allowed transform hover:scale-[1.01] active:scale-[0.99]"
+                    >
+                        {isLoading ? 'Oluşturuluyor...' : `PDF Oluştur ve İndir (${selectedFiles.length} Görsel)`}
+                    </button>
+                </div>
+            </div>
+
+            {/* Modallar */}
+            <LoadingModal isVisible={isLoading} />
+            <StatusModal status={status} hideModal={hideStatusModal} />
+        </div>
+    );
+};
+
+export default App;
+// Kütüphane gereksinimleri:
+// 1. React (Zaten varsayılan olarak mevcut)
+// 2. jsPDF (CDN üzerinden HTML'e eklenmelidir: https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js)
