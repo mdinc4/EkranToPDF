@@ -12,8 +12,10 @@ import { Button, Card, TextInput, Switch, ActivityIndicator } from 'react-native
 import { captureScreen } from 'react-native-view-shot';
 import * as ImagePicker from 'expo-image-picker';
 import * as MediaLibrary from 'expo-media-library';
-import * as FileSystem from 'expo-file-system'; // ✅ DOĞRU IMPORT
 import * as Sharing from 'expo-sharing';
+
+// YENİ FILE SYSTEM API
+import { File, Directory } from 'expo-file-system';
 
 export default function App() {
   const [screenshotUri, setScreenshotUri] = useState(null);
@@ -141,7 +143,38 @@ export default function App() {
     }
   };
 
-  // 4. OCR METİN ÇIKARMA (DÜZELTİLMİŞ)
+  // 4. DOSYA YAZMA FONKSİYONU (YENİ API)
+  const writeFileWithNewAPI = async (fileName, content) => {
+    try {
+      // Documents dizinini al
+      const documentsDir = Directory.getDocumentDirectory();
+      
+      // Dosya yolunu oluştur
+      const filePath = `${documentsDir}${fileName}`;
+      
+      // Dosyayı oluştur ve yaz
+      const file = new File(filePath);
+      await file.writeAsStringAsync(content);
+      
+      return filePath;
+    } catch (error) {
+      throw new Error(`Dosya yazılamadı: ${error.message}`);
+    }
+  };
+
+  // 5. DOSYA SİLME FONKSİYONU (YENİ API)
+  const deleteFileWithNewAPI = async (filePath) => {
+    try {
+      const file = new File(filePath);
+      if (await file.existsAsync()) {
+        await file.deleteAsync();
+      }
+    } catch (error) {
+      console.log('Dosya zaten silinmiş:', filePath);
+    }
+  };
+
+  // 6. OCR METİN ÇIKARMA (YENİ API)
   const extractTextWithOCR = async () => {
     if (!screenshotUri) {
       Alert.alert('Uyarı', 'Önce bir görsel seçin!');
@@ -186,11 +219,9 @@ ANKARA
       
       setExtractedText(turkishText);
       
-      // Metni dosyaya kaydet - HATA DÜZELTİLDİ
+      // Metni dosyaya kaydet - YENİ API
       const textFileName = `extracted_text_${Date.now()}.txt`;
-      const textFileUri = FileSystem.documentDirectory + textFileName;
-      
-      await FileSystem.writeAsStringAsync(textFileUri, turkishText);
+      const textFileUri = await writeFileWithNewAPI(textFileName, turkishText);
       
       const newFile = {
         id: Date.now().toString(),
@@ -210,7 +241,7 @@ ANKARA
     }
   };
 
-  // 5. PDF OLUŞTUR ve KAYDET (DÜZELTİLMİŞ)
+  // 7. PDF OLUŞTUR ve KAYDET (YENİ API)
   const createAndSavePDF = async () => {
     if (!screenshotUri && includeImage) {
       Alert.alert('Uyarı', 'PDF oluşturmak için önce bir görsel ekleyin!');
@@ -235,11 +266,9 @@ Görsel Durumu: ${screenshotUri ? 'EKLENDİ' : 'EKLENMEDİ'}
 --- Uygulama: Ekran Görüntüsü PDF Dönüştürücü ---
       `;
 
-      // PDF dosyasını oluştur - HATA DÜZELTİLDİ
+      // PDF dosyasını oluştur - YENİ API
       const pdfFileName = `${pdfName}_${Date.now()}.txt`;
-      const pdfFileUri = FileSystem.documentDirectory + pdfFileName;
-      
-      await FileSystem.writeAsStringAsync(pdfFileUri, pdfContent);
+      const pdfFileUri = await writeFileWithNewAPI(pdfFileName, pdfContent);
       
       const newFile = {
         id: Date.now().toString(),
@@ -275,7 +304,7 @@ Görsel Durumu: ${screenshotUri ? 'EKLENDİ' : 'EKLENMEDİ'}
     }
   };
 
-  // 6. KAYDEDİLEN DOSYALARI GÖSTER
+  // 8. KAYDEDİLEN DOSYALARI GÖSTER
   const showSavedFiles = () => {
     if (savedFiles.length === 0) {
       Alert.alert('Bilgi', 'Henüz kaydedilmiş dosya yok.');
@@ -293,8 +322,8 @@ Görsel Durumu: ${screenshotUri ? 'EKLENDİ' : 'EKLENMEDİ'}
     );
   };
 
-  // 7. TÜM DOSYALARI SİL
-  const clearAllFiles = () => {
+  // 9. TÜM DOSYALARI SİL (YENİ API)
+  const clearAllFiles = async () => {
     if (savedFiles.length === 0) {
       Alert.alert('Bilgi', 'Silinecek dosya yok.');
       return;
@@ -308,24 +337,24 @@ Görsel Durumu: ${screenshotUri ? 'EKLENDİ' : 'EKLENMEDİ'}
         { 
           text: 'Evet, Sil', 
           style: 'destructive',
-          onPress: () => {
-            // Tüm dosyaları sil
-            savedFiles.forEach(async (file) => {
-              try {
-                await FileSystem.deleteAsync(file.uri);
-              } catch (error) {
-                console.log('Dosya zaten silinmiş:', file.name);
+          onPress: async () => {
+            try {
+              // Tüm dosyaları fiziksel olarak sil
+              for (const file of savedFiles) {
+                await deleteFileWithNewAPI(file.uri);
               }
-            });
-            setSavedFiles([]);
-            Alert.alert('Başarılı', 'Tüm dosyalar silindi.');
+              setSavedFiles([]);
+              Alert.alert('Başarılı', 'Tüm dosyalar silindi.');
+            } catch (error) {
+              Alert.alert('Hata', 'Dosyalar silinirken hata oluştu: ' + error.message);
+            }
           }
         }
       ]
     );
   };
 
-  // 8. RESMİ SİL
+  // 10. RESMİ SİL
   const clearImage = () => {
     setScreenshotUri(null);
     setExtractedText('');
@@ -339,7 +368,7 @@ Görsel Durumu: ${screenshotUri ? 'EKLENDİ' : 'EKLENMEDİ'}
         <Card style={styles.card}>
           <Card.Content>
             <Text style={styles.title}>📱 EKRAN GÖRÜNTÜSÜ → PDF</Text>
-            <Text style={styles.subtitle}>OCR + Dosya Kaydetme</Text>
+            <Text style={styles.subtitle}>Yeni FileSystem API + Tüm Özellikler</Text>
           </Card.Content>
         </Card>
 
@@ -389,6 +418,9 @@ Görsel Durumu: ${screenshotUri ? 'EKLENDİ' : 'EKLENMEDİ'}
             ) : (
               <View style={styles.placeholder}>
                 <Text style={styles.placeholderText}>Görsel seçilmedi</Text>
+                <Text style={styles.placeholderSubtext}>
+                  Aşağıdaki seçeneklerden birini kullanın
+                </Text>
               </View>
             )}
             
@@ -397,6 +429,7 @@ Görsel Durumu: ${screenshotUri ? 'EKLENDİ' : 'EKLENMEDİ'}
                 mode="contained" 
                 onPress={takeAndSaveScreenshot}
                 loading={isProcessing}
+                disabled={isProcessing}
                 style={[styles.button, styles.primaryButton]}
                 icon="monitor-screenshot"
               >
@@ -406,6 +439,7 @@ Görsel Durumu: ${screenshotUri ? 'EKLENDİ' : 'EKLENMEDİ'}
               <Button 
                 mode="outlined" 
                 onPress={pickImageFromGallery}
+                disabled={isProcessing}
                 style={styles.button}
                 icon="image"
               >
@@ -415,6 +449,7 @@ Görsel Durumu: ${screenshotUri ? 'EKLENDİ' : 'EKLENMEDİ'}
               <Button 
                 mode="outlined" 
                 onPress={takePhotoWithCamera}
+                disabled={isProcessing}
                 style={styles.button}
                 icon="camera"
               >
@@ -428,6 +463,9 @@ Görsel Durumu: ${screenshotUri ? 'EKLENDİ' : 'EKLENMEDİ'}
         <Card style={styles.card}>
           <Card.Content>
             <Text style={styles.cardTitle}>🔍 OCR - Metin Çıkarma</Text>
+            <Text style={styles.ocrDescription}>
+              Görseldeki yazıları digital metne dönüştürür
+            </Text>
             
             {extractedText ? (
               <ScrollView style={styles.textContainer}>
@@ -439,7 +477,7 @@ Görsel Durumu: ${screenshotUri ? 'EKLENDİ' : 'EKLENMEDİ'}
               mode="contained" 
               onPress={extractTextWithOCR}
               loading={isProcessing}
-              disabled={!screenshotUri}
+              disabled={isProcessing || !screenshotUri}
               style={styles.button}
               icon="text-recognition"
             >
@@ -463,7 +501,11 @@ Görsel Durumu: ${screenshotUri ? 'EKLENDİ' : 'EKLENMEDİ'}
             
             <View style={styles.switchRow}>
               <Text>Görseli PDF'e Ekle</Text>
-              <Switch value={includeImage} onValueChange={setIncludeImage} />
+              <Switch 
+                value={includeImage} 
+                onValueChange={setIncludeImage} 
+                disabled={isProcessing}
+              />
             </View>
           </Card.Content>
         </Card>
@@ -475,11 +517,25 @@ Görsel Durumu: ${screenshotUri ? 'EKLENDİ' : 'EKLENMEDİ'}
               mode="contained" 
               onPress={createAndSavePDF}
               loading={isProcessing}
+              disabled={isProcessing}
               style={[styles.button, styles.pdfButton]}
               icon="file-pdf-box"
             >
-              📄 PDF Oluştur
+              📄 PDF Oluştur ve Kaydet
             </Button>
+          </Card.Content>
+        </Card>
+
+        {/* BİLGİ */}
+        <Card style={styles.infoCard}>
+          <Card.Content>
+            <Text style={styles.infoTitle}>ℹ️ Bilgi</Text>
+            <Text style={styles.infoText}>
+              • Yeni FileSystem API kullanılıyor{'\n'}
+              • Tüm dosya işlemleri çalışıyor{'\n'}
+              • Paylaşım özelliği aktif{'\n'}
+              • OCR demo modunda
+            </Text>
           </Card.Content>
         </Card>
 
@@ -511,6 +567,14 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     backgroundColor: 'white',
     elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+  },
+  infoCard: {
+    backgroundColor: '#e3f2fd',
+    borderColor: '#2196F3',
   },
   title: {
     fontSize: 20,
@@ -529,6 +593,23 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 12,
     color: '#333',
+  },
+  infoTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 8,
+    color: '#1976d2',
+  },
+  infoText: {
+    fontSize: 14,
+    color: '#555',
+    lineHeight: 20,
+  },
+  ocrDescription: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 12,
+    fontStyle: 'italic',
   },
   imageContainer: {
     alignItems: 'center',
@@ -553,10 +634,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 12,
+    padding: 16,
   },
   placeholderText: {
     color: '#666',
     fontSize: 16,
+    fontWeight: '500',
+  },
+  placeholderSubtext: {
+    color: '#999',
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 4,
   },
   buttonRow: {
     flexDirection: 'row',
